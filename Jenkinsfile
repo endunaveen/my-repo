@@ -3,11 +3,10 @@ pipeline {
 
     environment {
         AWS_REGION = 'ap-south-1'
-        TF_VAR_key_name = 'your-key-name'
     }
 
     stages {
-        stage('Checkout') {
+        stage('Checkout Code') {
             steps {
                 git 'https://github.com/endunaveen/my-repo.git'
             }
@@ -15,54 +14,53 @@ pipeline {
 
         stage('Terraform Init & Apply') {
             steps {
-        withCredentials([usernamePassword(credentialsId: 'aws-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
-          dir("${TF_DIR}") {
-            sh '''
-              export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
-              export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
-              terraform init
-              terraform apply -auto-approve
-            '''
-          }
+                dir('terraform') {
+                    sh 'terraform init'
+                    sh 'terraform plan’
+                    sh 'terraform apply -auto-approve'
+                }
             }
         }
 
-        stage('Get Public IP') {
+        stage('Get EC2 IP') {
             steps {
                 script {
                     def ec2Ip = sh(script: "cd terraform && terraform output -raw ec2_public_ip", returnStdout: true).trim()
-                    env.APP_EC2_IP = ec2Ip
+                    env.APP_IP = ec2Ip
+                    echo "✅ EC2 IP: ${APP_IP}"
                 }
             }
         }
 
-        stage('Install Kubernetes + Helm') {
+        stage('Install Kind & Deploy Tomcat') {
             steps {
-                sshagent(['ec2-key']) {
-                    sh '''
-                    ssh -o StrictHostKeyChecking=no ubuntu@$APP_EC2_IP << EOF
-                        sudo apt update
-                        sudo snap install helm --classic
-                        curl -LO "https://dl.k8s.io/release/v1.29.2/bin/linux/amd64/kubectl"
-                        chmod +x kubectl && sudo mv kubectl /usr/local/bin/
-                        curl -LO https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
-                        chmod +x kind-linux-amd64 && sudo mv kind-linux-amd64 /usr/local/bin/kind
-                        kind create cluster
-                    EOF
-                    '''
-                }
-            }
-        }
+                sshagent(credentials: ['ec2-2-key']) {
+                    sh """
+                    ssh -o StrictHostKeyChecking=no ubuntu@${APP_IP} << 'EOF'
+                      sudo apt update -y
+                      sudo apt install -y docker.io curl
 
-        stage('Deploy App with Helm') {
-            steps {
-                sshagent(['ec2-key']) {
-                    sh '''
-                    ssh ubuntu@$APP_EC2_IP << EOF
-                        helm repo add bitnami https://charts.bitnami.com/bitnami
-                        helm install my-nginx bitnami/nginx
+                      # Install Kind
+                      curl -Lo kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+                      chmod +x kind && sudo mv kind /usr/local/bin/
+
+                      # Install kubectl
+                      curl -LO "https://dl.k8s.io/release/v1.29.2/bin/linux/amd64/kubectl"
+                      chmod +x kubectl && sudo mv kubectl /usr/local/bin/kubectl
+
+                      # Install Helm
+                      curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+                      # Start Kind cluster
+                      kind create cluster --name tomcat-cluster
+
+                      # Deploy Tomcat using Helm
+                      helm repo add bitnami https://charts.bitnami.com/bitnami
+                      helm install tomcat bitnami/tomcat --set service.type=NodePort
+
+                      echo "🎉 Tomcat deployed successfully on Kind!"
                     EOF
-                    '''
+                    """
                 }
             }
         }
@@ -70,7 +68,7 @@ pipeline {
 
     post {
         always {
-            echo "Pipeline Completed!"
+            echo '📦 Pipeline completed'
         }
     }
 }
