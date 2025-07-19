@@ -4,7 +4,7 @@ provider "aws" {
 
 resource "aws_key_pair" "ec2_key" {
   key_name   = "ec2-2-key"
-  public_key = file("/home/ubuntu/.ssh/ec2-2-key.pub")
+  public_key = file("~/.ssh/ec2-2-key.pub")
 }
 
 resource "aws_security_group" "ec2_sg" {
