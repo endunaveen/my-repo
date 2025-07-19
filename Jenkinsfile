@@ -14,7 +14,11 @@ pipeline {
 
         stage('Terraform Init & Apply') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'aws-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+                withCredentials([usernamePassword(
+                    credentialsId: 'aws-creds',
+                    usernameVariable: 'AWS_ACCESS_KEY_ID',
+                    passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+                )]) {
                     dir('terraform') {
                         sh '''
                             export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
@@ -23,6 +27,7 @@ pipeline {
                             terraform apply -auto-approve
                         '''
                     }
+                }
             }
         }
 
@@ -40,39 +45,39 @@ pipeline {
             steps {
                 sshagent(credentials: ['ec2-2-key']) {
                     sh """
-                    ssh -o StrictHostKeyChecking=no ubuntu@${APP_IP} << 'EOF'
-                      sudo apt update -y
-                      sudo apt install -y docker.io curl
+                        ssh -o StrictHostKeyChecking=no ubuntu@${APP_IP} << 'EOF'
+                          sudo apt update -y
+                          sudo apt install -y docker.io curl
 
-                      # Install Kind
-                      curl -Lo kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
-                      chmod +x kind && sudo mv kind /usr/local/bin/
+                          # Install Kind
+                          curl -Lo kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+                          chmod +x kind && sudo mv kind /usr/local/bin/
 
-                      # Install kubectl
-                      curl -LO "https://dl.k8s.io/release/v1.29.2/bin/linux/amd64/kubectl"
-                      chmod +x kubectl && sudo mv kubectl /usr/local/bin/kubectl
+                          # Install kubectl
+                          curl -LO "https://dl.k8s.io/release/v1.29.2/bin/linux/amd64/kubectl"
+                          chmod +x kubectl && sudo mv kubectl /usr/local/bin/kubectl
 
-                      # Install Helm
-                      curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+                          # Install Helm
+                          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
-                      # Start Kind cluster
-                      kind create cluster --name tomcat-cluster
+                          # Start Kind cluster
+                          kind create cluster --name tomcat-cluster
 
-                      # Deploy Tomcat using Helm
-                      helm repo add bitnami https://charts.bitnami.com/bitnami
-                      helm install tomcat bitnami/tomcat --set service.type=NodePort
+                          # Deploy Tomcat using Helm
+                          helm repo add bitnami https://charts.bitnami.com/bitnami
+                          helm install tomcat bitnami/tomcat --set service.type=NodePort
 
-                      echo "🎉 Tomcat deployed successfully on Kind!"
-                    EOF
+                          echo "🎉 Tomcat deployed successfully on Kind!"
+                        EOF
                     """
                 }
             }
         }
-    }
+    } // <-- fixed: close `stages` block here
 
     post {
         always {
             echo '📦 Pipeline completed'
         }
     }
-
+}
